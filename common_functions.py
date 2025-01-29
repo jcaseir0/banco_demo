@@ -1,7 +1,7 @@
 import os
 import configparser
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from faker import Faker
 
@@ -80,13 +80,18 @@ def gerar_transacao():
         dict: A dictionary containing transaction details.
     """
     logger.debug("Generating transaction record")
+
+    # Calculate the date range for the last 10 years
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365 * 10)
+
     return {
         "id_usuario": random.randint(1, 1000),
-        "data_transacao": fake.date_time_this_year(),
-        "valor": round(random.uniform(10, 1000), 2),
+        "data_transacao": fake.date_time_between(start_date=start_date, end_date=end_date),
+        "valor": round(random.uniform(10, 100000), 2),
         "estabelecimento": fake.company(),
-        "categoria": random.choice(["Alimentação", "Transporte", "Entretenimento", "Saúde", "Educação"]),
-        "status": random.choice(["Aprovada", "Negada", "Pendente"])
+        "categoria": random.choice(["Alimentação", "Transporte", "Entretenimento", "Saúde", "Educação", "Outros"]),
+        "status": random.choice(["Aprovada", "Negada", "Pendente", "Estornada", "Cancelada", "Fraude"])
     }
 
 def gerar_cliente():
