@@ -3,8 +3,8 @@ import json
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
-from pyspark.sql.functions import current_date, lit
 from common_functions import load_config, gerar_dados, table_exists
+from datetime import time
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -96,8 +96,8 @@ def main():
         if table_exists(spark, database_name, table_name):
             logger.info(f"Updating existing table: {table_name}")
             data = gerar_dados(table_name, num_records)
-            df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
-            df = df.withColumn("data_execucao", lit(current_date))
+            current_date = time.strftime("%d-%m-%Y")
+            df = df.withColumn("data_execucao", current_date)
             df.createOrReplaceTempView("temp_view")
             update_table(spark, database_name, table_name, partition_by)
         else:
