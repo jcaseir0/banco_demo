@@ -3,13 +3,13 @@ import json
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
-from pyspark.sql.functions import current_date
+from pyspark.sql.functions import current_date, lit
 from common_functions import load_config, gerar_dados, table_exists
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def update_table(spark, table_name, partition_by=None):
+def update_table(spark, database_name, table_name, partition_by=None):
     """
     Update a table with new data, optionally partitioning by a specified column.
 
@@ -23,17 +23,19 @@ def update_table(spark, table_name, partition_by=None):
     """
     logger.info(f"Updating table: {table_name}")
     logger.debug(f"Partition by: {partition_by}")
+
+    current_date = spark.sql("SELECT CURRENT_DATE() as date").collect()[0]['date']
     try:
         if partition_by:
             logger.debug(f"Inserting data with partition: {partition_by}")
             spark.sql(f"""
-                INSERT INTO {table_name}
-                PARTITION ({partition_by}=current_date())
+                INSERT INTO {database_name}.{table_name}
+                PARTITION ({partition_by}={current_date})
                 SELECT * FROM temp_view
             """)
         else:
             logger.debug("Inserting data without partition")
-            spark.sql(f"INSERT INTO {table_name} SELECT * FROM temp_view")
+            spark.sql(f"INSERT INTO {database_name}.{table_name} SELECT * FROM temp_view")
         logger.info(f"Data inserted into table '{table_name}' successfully.")
     except Exception as e:
         logger.error(f"Error updating table '{table_name}': {str(e)}")
@@ -95,9 +97,9 @@ def main():
             logger.info(f"Updating existing table: {table_name}")
             data = gerar_dados(table_name, num_records)
             df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
-            df = df.withColumn("data_execucao", current_date())
+            df = df.withColumn("data_execucao", lit(current_date))
             df.createOrReplaceTempView("temp_view")
-            update_table(spark, table_name, partition_by)
+            update_table(spark, database_name, table_name, partition_by)
         else:
             logger.warning(f"Table '{table_name}' does not exist. Cannot update.")
 
