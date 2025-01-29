@@ -2,13 +2,13 @@ import os
 import json
 import logging
 import sys
-import time
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
 from pyspark import SparkConf
 from pyspark.sql.utils import AnalysisException
 from pyspark.sql.functions import lit
 from common_functions import load_config, gerar_dados, table_exists
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -304,7 +304,7 @@ def main():
 
         if not table_exists(spark, database_name, table_name):
             logger.info(f"Table '{table}' does not exist. Creating...")
-            current_date = time.strftime("%d-%m-%Y")
+            current_date = datetime.now().strftime("%d-%m-%Y")
             num_records = config.getint(table_name, 'num_records', fallback=100)
             partition_by = config.get(table_name, 'partition_by', fallback=None)
             

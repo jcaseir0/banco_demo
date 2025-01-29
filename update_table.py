@@ -6,7 +6,7 @@ from pyspark import SparkConf
 from pyspark.sql.types import StructType
 from pyspark.sql.functions import lit
 from common_functions import load_config, gerar_dados, table_exists
-from datetime import time
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ def main():
         if table_exists(spark, database_name, table_name):
             if 'transacoes_cartao' in table_name:
                 data = gerar_dados(table_name, num_records_update, clientes_id_usuarios)
-                current_date = time.strftime("%Y-%m-%d")
+                current_date = datetime.now().strftime("%d-%m-%Y")
                 df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
                 df = df.withColumn(partition_by, lit(current_date))
             elif 'clientes' in table_name:
