@@ -4,7 +4,7 @@ import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
 from pyspark.sql.functions import current_date
-from common_functions import load_config, generate_data, table_exists
+from common_functions import load_config, gerar_dados, table_exists
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ def main():
 
         if table_exists(spark, table_name):
             logger.info(f"Updating existing table: {table_name}")
-            data = generate_data(table_name, num_records)
+            data = gerar_dados(table_name, num_records)
             df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
             df = df.withColumn("execution_date", current_date())
             df.createOrReplaceTempView("temp_view")
