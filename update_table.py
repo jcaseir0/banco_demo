@@ -2,7 +2,9 @@ import os
 import json
 import logging
 from pyspark.sql import SparkSession
+from pyspark import SparkConf
 from pyspark.sql.types import StructType
+from pyspark.sql.functions import lit
 from common_functions import load_config, gerar_dados, table_exists
 from datetime import time
 
@@ -63,25 +65,47 @@ def main():
     generates new data, and updates each existing table.
     """
     logger.info("Starting table update process")
-    spark = SparkSession.builder.appName("UpdateTable").getOrCreate()
-    logger.debug("Spark session created")
-
     config = load_config()
     logger.debug("Configuration loaded")
+    jdbc_url = config['DEFAULT'].get('hmsUrl')
+    thrift_server = config['DEFAULT'].get('thriftServer')
+
+    logger.debug(f"JDBC URL: {jdbc_url}")
+    logger.debug(f"Thrift Server: {thrift_server}")
+
+    spark_conf = SparkConf()
+    spark_conf.set("hive.metastore.client.factory.class", "com.cloudera.spark.hive.metastore.HivemetastoreClientFactory")
+    spark_conf.set("hive.metastore.uris", thrift_server)
+    spark_conf.set("spark.sql.hive.metastore.jars", "builtin")
+    spark_conf.set("spark.sql.hive.hiveserver2.jdbc.url", jdbc_url)
+
+    spark = SparkSession.builder.config(conf=spark_conf).appName("UpdateTable").enableHiveSupport().getOrCreate()
+    logger.debug("Spark session created")
+
+    database_name = config.get("DEFAULT", "dbname")
+    tables = config.get("DEFAULT", "tables").split(",")
+    logger.debug(f"Tables to process: {tables}")
+    base_path = "/app/mount"
+
+    # Generate clientes data first
+    clientes_table = [table for table in tables if 'clientes' in table][0]
+    logger.debug(f"Clientes table: {clientes_table}")
+    clientes_num_records = config.getint(clientes_table, 'num_records', fallback=100)
+    clientes_data = gerar_dados(clientes_table, clientes_num_records)
+    clientes_id_usuarios = [cliente['id_usuario'] for cliente in clientes_data]
 
     # Acessando a lista de tabelas diretamente da seção DEFAULT
-    for table_name in config.get("DEFAULT", "tables").split(","):
+    for table_name in tables:
         table_name = table_name.strip()  # Remove espaços em branco se houver
         logger.info(f"Processing table: {table_name}")
 
         # Acessando as configurações da tabela usando o nome da tabela
-        num_records = config.getint(table_name, 'num_records', fallback=100)
+        num_records_update = config.getint(table_name, 'num_records_update', fallback=100)
         partition_by = config.get(table_name, 'partition_by', fallback=None)
-        base_path = "/app/mount"
         schema_path = get_schema_path(base_path, table_name)
 
         logger.debug(f"Schema path: {schema_path}")
-        logger.debug(f"Number of records: {num_records}")
+        logger.debug(f"Number of records: {num_records_update}")
         logger.debug(f"Partition by: {partition_by}")
 
         if not os.path.exists(schema_path):
@@ -92,13 +116,28 @@ def main():
             schema = json.load(f)
         logger.debug("Schema loaded")
 
-        database_name = config.get("DEFAULT", "dbname")
         if table_exists(spark, database_name, table_name):
-            logger.info(f"Updating existing table: {table_name}")
-            data = gerar_dados(table_name, num_records)
-            current_date = time.strftime("%d-%m-%Y")
-            df = df.withColumn("data_execucao", current_date)
+            if 'transacoes_cartao' in table_name:
+                data = gerar_dados(table_name, num_records_update, clientes_id_usuarios)
+                current_date = time.strftime("%Y-%m-%d")
+                df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
+                df = df.withColumn(partition_by, lit(current_date))
+            elif 'clientes' in table_name:
+                data = gerar_dados(table_name, num_records_update)
+                df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
+                # Apply bucketing for clientes table
+                num_buckets = config.getint(table_name, 'num_buckets', fallback=5)
+                df = df.repartition(num_buckets, "id_uf")
+            else:
+                data = gerar_dados(table_name, num_records_update)
+                df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
+            
             df.createOrReplaceTempView("temp_view")
+            logger.info("temp_view sample rows:")
+            sample_rows = spark.sql(f"SELECT * FROM temp_view LIMIT 3").collect()
+            for row in sample_rows:
+                logger.info(str(row))
+
             update_table(spark, database_name, table_name, partition_by)
         else:
             logger.warning(f"Table '{table_name}' does not exist. Cannot update.")
