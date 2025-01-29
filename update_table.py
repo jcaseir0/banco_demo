@@ -11,33 +11,52 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def update_table(spark, database_name, table_name, partition_by=None):
+def update_table(spark, database_name, table_name, partition_by=None, is_bucketed=False):
     """
-    Update a table with new data, optionally partitioning by a specified column.
+    Update a table with new data, handling partitioning and bucketing.
 
     Args:
         spark (SparkSession): The active Spark session.
+        database_name (str): The name of the database.
         table_name (str): The name of the table to update.
         partition_by (str, optional): The column to partition by, if any.
+        is_bucketed (bool): Whether the table is bucketed.
 
     Raises:
         Exception: If an error occurs during the update process.
     """
     logger.info(f"Updating table: {table_name}")
     logger.debug(f"Partition by: {partition_by}")
+    logger.debug(f"Is bucketed: {is_bucketed}")
 
-    current_date = spark.sql("SELECT CURRENT_DATE() as date").collect()[0]['date']
     try:
+        # Get the schema of the target table
+        table_schema = spark.sql(f"DESCRIBE {database_name}.{table_name}").collect()
+        columns = [row['col_name'] for row in table_schema if row['data_type'] != '']
+
         if partition_by:
+            current_date = spark.sql("SELECT date_format(CURRENT_DATE(), 'dd-MM-yyyy') as date").collect()[0]['date']
             logger.debug(f"Inserting data with partition: {partition_by}")
+            non_partition_columns = [col for col in columns if col != partition_by]
+            column_list = ", ".join(non_partition_columns)
             spark.sql(f"""
                 INSERT INTO {database_name}.{table_name}
                 PARTITION ({partition_by}='{current_date}')
-                SELECT * FROM temp_view
+                SELECT {column_list}
+                FROM temp_view
+            """)
+        elif is_bucketed:
+            logger.debug("Inserting data into bucketed table")
+            column_list = ", ".join(columns)
+            spark.sql(f"""
+                INSERT INTO {database_name}.{table_name}
+                SELECT {column_list}
+                FROM temp_view
             """)
         else:
-            logger.debug("Inserting data without partition")
+            logger.debug("Inserting data without partition or bucketing")
             spark.sql(f"INSERT INTO {database_name}.{table_name} SELECT * FROM temp_view")
+        
         logger.info(f"Data inserted into table '{table_name}' successfully.")
     except Exception as e:
         logger.error(f"Error updating table '{table_name}': {str(e)}")
@@ -122,23 +141,26 @@ def main():
                 current_date = datetime.now().strftime("%d-%m-%Y")
                 df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
                 df = df.withColumn(partition_by, lit(current_date))
+                df.createOrReplaceTempView("temp_view")
+                update_table(spark, database_name, table_name, partition_by)
             elif 'clientes' in table_name:
                 data = gerar_dados(table_name, num_records_update)
                 df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
                 # Apply bucketing for clientes table
                 num_buckets = config.getint(table_name, 'num_buckets', fallback=5)
                 df = df.repartition(num_buckets, "id_uf")
+                df.createOrReplaceTempView("temp_view")
+                update_table(spark, database_name, table_name, is_bucketed=True)
             else:
                 data = gerar_dados(table_name, num_records_update)
                 df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
+                df.createOrReplaceTempView("temp_view")
+                update_table(spark, database_name, table_name)
             
-            df.createOrReplaceTempView("temp_view")
             logger.info("temp_view sample rows:")
             sample_rows = spark.sql(f"SELECT * FROM temp_view LIMIT 3").collect()
             for row in sample_rows:
                 logger.info(str(row))
-
-            update_table(spark, database_name, table_name, partition_by)
         else:
             logger.warning(f"Table '{table_name}' does not exist. Cannot update.")
 
