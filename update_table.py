@@ -50,7 +50,7 @@ def get_schema_path(base_path, table_name):
     Returns:
     str: The full path to the schema file for the given table.
     """
-    schema_filename = f"{table_name}_schema.json"
+    schema_filename = f"{table_name}.json"
     return os.path.join(base_path, "schemas", schema_filename)
 
 def main():
