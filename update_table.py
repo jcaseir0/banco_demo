@@ -39,6 +39,20 @@ def update_table(spark, table_name, partition_by=None):
         logger.error(f"Error updating table '{table_name}': {str(e)}")
         raise
 
+def get_schema_path(base_path, table_name):
+    """
+    Generate the schema path for a given table.
+    
+    Args:
+    base_path (str): The base directory path where schema files are stored.
+    table_name (str): The name of the table.
+    
+    Returns:
+    str: The full path to the schema file for the given table.
+    """
+    schema_filename = f"{table_name}_schema.json"
+    return os.path.join(base_path, "schemas", schema_filename)
+
 def main():
     """
     Main function to update tables based on configuration.
@@ -53,11 +67,16 @@ def main():
     config = load_config()
     logger.debug("Configuration loaded")
 
-    for table_name, table_config in config.get("tables", {}).items():
+    # Acessando a lista de tabelas diretamente da seção DEFAULT
+    for table_name in config.get("DEFAULT", "tables").split(","):
+        table_name = table_name.strip()  # Remove espaços em branco se houver
         logger.info(f"Processing table: {table_name}")
-        schema_path = table_config.get("schema_path")
-        num_records = table_config.get("num_records", 100)
-        partition_by = table_config.get("partition_by")
+
+        # Acessando as configurações da tabela usando o nome da tabela
+        num_records = config.getint(table_name, 'num_records', fallback=100)
+        partition_by = config.get(table_name, 'partition_by', fallback=None)
+        base_path = "/app/mount"
+        schema_path = get_schema_path(base_path, table_name)
 
         logger.debug(f"Schema path: {schema_path}")
         logger.debug(f"Number of records: {num_records}")
@@ -75,7 +94,7 @@ def main():
             logger.info(f"Updating existing table: {table_name}")
             data = gerar_dados(table_name, num_records)
             df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
-            df = df.withColumn("execution_date", current_date())
+            df = df.withColumn("data_execucao", current_date())
             df.createOrReplaceTempView("temp_view")
             update_table(spark, table_name, partition_by)
         else:
