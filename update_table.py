@@ -32,7 +32,7 @@ def update_table(spark, database_name, table_name, partition_by=None):
             logger.debug(f"Inserting data with partition: {partition_by}")
             spark.sql(f"""
                 INSERT INTO {database_name}.{table_name}
-                PARTITION ({partition_by}={current_date})
+                PARTITION ({partition_by}='{current_date}')
                 SELECT * FROM temp_view
             """)
         else:
