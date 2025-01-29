@@ -90,7 +90,8 @@ def main():
             schema = json.load(f)
         logger.debug("Schema loaded")
 
-        if table_exists(spark, table_name):
+        database_name = config.get("DEFAULT", "dbname")
+        if table_exists(spark, database_name, table_name):
             logger.info(f"Updating existing table: {table_name}")
             data = gerar_dados(table_name, num_records)
             df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
