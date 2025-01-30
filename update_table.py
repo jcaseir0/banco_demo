@@ -147,6 +147,8 @@ def main():
                 df = df.withColumn(partition_by, lit(current_date))
                 df.createOrReplaceTempView("temp_view")
                 update_table(spark, database_name, table_name, partition_by)
+                record_count = spark.sql(f"SELECT COUNT(*) FROM {table_name}").collect()[0][0]
+                logger.info(f"Total records in table '{table_name}': {record_count}")
             elif 'clientes' in table_name:
                 data = gerar_dados(table_name, num_records_update)
                 df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
@@ -155,11 +157,15 @@ def main():
                 df = df.repartition(num_buckets, "id_uf")
                 df.createOrReplaceTempView("temp_view")
                 update_table(spark, database_name, table_name, is_bucketed=True)
+                record_count = spark.sql(f"SELECT COUNT(*) FROM {table_name}").collect()[0][0]
+                logger.info(f"Total records in table '{table_name}': {record_count}")
             else:
                 data = gerar_dados(table_name, num_records_update)
                 df = spark.createDataFrame(data, schema=StructType.fromJson(schema))
                 df.createOrReplaceTempView("temp_view")
                 update_table(spark, database_name, table_name)
+                record_count = spark.sql(f"SELECT COUNT(*) FROM {table_name}").collect()[0][0]
+                logger.info(f"Total records in table '{table_name}': {record_count}")
             
             logger.info("temp_view sample rows:")
             sample_rows = spark.sql(f"SELECT * FROM temp_view LIMIT 3").collect()
