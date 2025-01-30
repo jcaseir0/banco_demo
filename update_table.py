@@ -32,6 +32,7 @@ def update_table(spark, database_name, table_name, partition_by=None, is_buckete
     try:
         # Get the schema of the target table
         table_schema = spark.sql(f"DESCRIBE {database_name}.{table_name}").collect()
+        logger.info(f"table_schema: {table_schema}")
         columns = [row['col_name'] for row in table_schema if row['data_type'] != '']
 
         if partition_by:
@@ -39,6 +40,7 @@ def update_table(spark, database_name, table_name, partition_by=None, is_buckete
             logger.debug(f"Inserting data with partition: {partition_by}")
             non_partition_columns = [col for col in columns if col != partition_by]
             column_list = ", ".join(non_partition_columns)
+            logger.info(f"Columns: {column_list}")
             spark.sql(f"""
                 INSERT INTO {database_name}.{table_name}
                 PARTITION ({partition_by}='{current_date}')
@@ -48,6 +50,7 @@ def update_table(spark, database_name, table_name, partition_by=None, is_buckete
         elif is_bucketed:
             logger.debug("Inserting data into bucketed table")
             column_list = ", ".join(columns)
+            logger.info(f"Columns: {column_list}")
             spark.sql(f"""
                 INSERT INTO {database_name}.{table_name}
                 SELECT {column_list}
