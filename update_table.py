@@ -32,15 +32,16 @@ def update_table(spark, database_name, table_name, partition_by=None, is_buckete
     try:
         # Get the schema of the target table
         table_schema = spark.sql(f"DESCRIBE {database_name}.{table_name}").collect()
-        logger.info(f"table_schema: {table_schema}")
-        columns = [row['col_name'] for row in table_schema if row['data_type'] != '']
+        logger.debug(f"table_schema: {table_schema}")
+        # Filter out rows with col_name='# col_name' or data_type='data_type'
+        columns = [row['col_name'] for row in table_schema if row['data_type'] != '' and row['col_name'] != '# col_name' and row['data_type'] != 'data_type']
+        logger.info(f"Columns: {', '.join(columns)}")
 
         if partition_by:
             current_date = spark.sql("SELECT date_format(CURRENT_DATE(), 'dd-MM-yyyy') as date").collect()[0]['date']
             logger.debug(f"Inserting data with partition: {partition_by}")
             non_partition_columns = [col for col in columns if col != partition_by]
             column_list = ", ".join(non_partition_columns)
-            logger.info(f"Columns: {column_list}")
             spark.sql(f"""
                 INSERT INTO {database_name}.{table_name}
                 PARTITION ({partition_by}='{current_date}')
