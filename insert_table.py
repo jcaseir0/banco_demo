@@ -64,7 +64,7 @@ def get_table_columns(spark: SparkSession, database_name: str, table_name: str) 
         raise
 
 def insert_data(spark: SparkSession, database_name: str, table_name: str, columns: list,
-                partition_by: str = None, is_bucketed: str = None) -> None:
+                partition_by: str = None, is_bucketed: bool = False) -> None:
     """
     Inserts data into the specified table, handling partitioning and bucketing.
 
@@ -77,7 +77,7 @@ def insert_data(spark: SparkSession, database_name: str, table_name: str, column
         table_name (str): The name of the table to update.
         columns (list): A list of valid column names for the table.
         partition_by (str, optional): The column to partition by, if any. Defaults to None.
-        is_bucketed (str, optional): Whether the table is bucketed. Defaults to False.
+        is_bucketed (bool, optional): Whether the table is bucketed. Defaults to False.
 
     Raises:
         Exception: If an error occurs during the data insertion process.
@@ -99,7 +99,7 @@ def insert_data(spark: SparkSession, database_name: str, table_name: str, column
                 FROM temp_view
             """)
         elif is_bucketed:
-            logger.debug("Inserting data into bucketed table with bucketing column: {is_bucketed}")
+            logger.debug("Inserting data into bucketed table with bucketing column")
             spark.sql(f"""
                 INSERT INTO {database_name}.{table_name}
                 SELECT {column_list}
@@ -107,14 +107,18 @@ def insert_data(spark: SparkSession, database_name: str, table_name: str, column
             """)
         else:
             logger.debug("Inserting data without partition or bucketing")
-            spark.sql(f"INSERT INTO {database_name}.{table_name} SELECT * FROM temp_view")
+            spark.sql(f"""
+                INSERT INTO {database_name}.{table_name} 
+                SELECT * 
+                FROM temp_view
+            """)
 
         logger.info(f"Data inserted into table '{table_name}' successfully.")
     except Exception as e:
         logger.error(f"Error inserting data into table '{table_name}': {str(e)}")
         raise
 
-def generate_and_write_data(spark: SparkSession, config: ConfigParser, table_name: str, clientes_data=None):
+def generate_and_write_data(spark: SparkSession, config: ConfigParser, table_name: str, clientes_data=None) -> None:
     """Generates data and writes it to the specified table.
 
     Args:
@@ -149,7 +153,7 @@ def generate_and_write_data(spark: SparkSession, config: ConfigParser, table_nam
         logger.info(f"Total records in table '{table_name}' before insert: {record_count_before}")
 
         columns = get_table_columns(spark, database_name, table_name)
-        logger.debug(f"Columns: {columns}")
+        logger.info(f"Columns: {columns}")
 
         table_schema = spark.table(f"{database_name}.{table_name}").schema
         df = spark.createDataFrame(data, schema=table_schema)
@@ -160,7 +164,7 @@ def generate_and_write_data(spark: SparkSession, config: ConfigParser, table_nam
 
         df.createOrReplaceTempView("temp_view")
 
-        insert_data(spark, database_name, table_name, columns, partition_by, bucketing_column if is_bucketed else None)
+        insert_data(spark, database_name, table_name, columns, partition_by, is_bucketed)
         
         record_count_after = spark.sql(f"SELECT COUNT(*) FROM {database_name}.{table_name}").collect()[0][0]
         logger.info(f"Total records in table '{table_name}' after insert: {record_count_after}")
@@ -175,7 +179,6 @@ def generate_and_write_data(spark: SparkSession, config: ConfigParser, table_nam
             transacoes_ids = [row.id_usuario for row in transacoes_sample]
             logger.info(f"Sampled id_usuario from 'transacoes_cartao' table: {transacoes_ids}")
 
-            # Take those ids as basis for selecting from the cliente's data to check.
             clientes_sample = spark.sql(f"""
                 SELECT id_usuario
                 FROM {database_name}.clientes
@@ -202,6 +205,7 @@ def generate_clientes_data(config: ConfigParser) -> list:
         clientes_data = gerar_dados(clientes_table, clientes_num_records)
         logger.debug(f"Clientes data generated sample: {clientes_data[:3]}")
         return clientes_data
+    
     except Exception as e:
         logger.error(f"Error generating clientes data: {e}")
         return []
@@ -215,6 +219,8 @@ def main():
     """
     logger.info("Starting table update process")
     config = load_config()
+    logger.debug("Configuration loaded")
+
     if not config:
         logger.error("Failed to load configuration. Exiting.")
         return
@@ -235,7 +241,8 @@ def main():
         logger.debug(f"Tables: {tables}")
 
         clientes_data = generate_clientes_data(config)
- 
+        logger.debug(f"Clientes table: {clientes_data}")
+                     
         for table_name in tables:
             table_name = table_name.strip()
             logger.info(f"Processing table: {table_name}")
